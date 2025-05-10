@@ -1,3 +1,16 @@
+app.post("/webhook", async (req, res) => {
+  // Verificação do Podio
+  const hookSecret = req.header("X-Hook-Secret");
+  if (hookSecret) {
+    return res.status(200).send(hookSecret);
+  }
+  
+  // Segue o fluxo normal abaixo
+  const item = req.body;
+  ...
+
+
+
 import express from "express";
 import bodyParser from "body-parser";
 import { config } from "dotenv";
