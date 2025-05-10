@@ -47,6 +47,17 @@ Faça uma revisão detalhada e sugira ajustes se necessário, mantendo o estilo 
   }
 });
 
+app.get("/webhook", (req, res) => {
+  const validationToken = req.headers["x-hook-secret"];
+  if (validationToken) {
+    res.set("X-Hook-Secret", validationToken);
+    return res.status(200).send();
+  }
+  res.status(400).send("Missing X-Hook-Secret header");
+});
+
+
+
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`);
 });
