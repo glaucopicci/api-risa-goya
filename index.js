@@ -14,6 +14,14 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 
 // Verificação de webhook do Podio
+
+
+app.use((req, res, next) => {
+  console.log(`Recebido ${req.method} em ${req.url}`);
+  next();
+});
+
+
 app.get("/webhook", (req, res) => {
   const verifyToken = req.headers["x-podio-webhook-verify"];
   if (verifyToken) {
