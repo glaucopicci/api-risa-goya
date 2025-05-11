@@ -14,14 +14,14 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Verificação de webhook do Podio
 app.get("/webhook", (req, res) => {
-  const verifyToken = req.get("x-podio-webhook-verify");
+  const verifyToken = req.headers["x-podio-webhook-verify"];
   if (verifyToken) {
-    res.setHeader("Content-Type", "text/plain");
-    res.setHeader("Content-Length", Buffer.byteLength(verifyToken, "utf-8"));
-    res.write(verifyToken);
-    return res.end();
+    return res
+      .status(200)
+      .type("text/plain")
+      .send(verifyToken.trim());
   }
-  res.status(400).send("Cabeçalho de verificação não encontrado.");
+  return res.status(400).send("Cabeçalho de verificação não encontrado.");
 });
 
 
