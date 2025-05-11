@@ -18,7 +18,7 @@ app.get("/webhook", (req, res) => {
   const verifyToken = req.headers["x-podio-webhook-verify"];
   if (verifyToken) {
     console.log("Header de verificação recebido:", verifyToken);
-    return res.type("text/plain").status(200).send(verifyToken.trim());
+return res.type("text/plain").status(200).end(verifyToken);
   }
   return res.status(400).send("Cabeçalho de verificação não encontrado.");
 });
