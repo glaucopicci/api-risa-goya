@@ -12,21 +12,13 @@ app.use(bodyParser.json());
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-app.get("/webhook-debug", (req, res) => {
-  console.log("🔍 Debug Podio Webhook:");
-  console.log("Headers recebidos:", req.headers);
-
-  res.status(200).send("Debug recebido. Verifique os logs.");
-});
 
 // Verificação de webhook do Podio
 app.get("/webhook", (req, res) => {
   const verifyToken = req.headers["x-podio-webhook-verify"];
   if (verifyToken) {
-    return res
-      .status(200)
-      .type("text/plain")
-      .send(verifyToken.trim());
+    console.log("Header de verificação recebido:", verifyToken);
+    return res.type("text/plain").status(200).send(verifyToken.trim());
   }
   return res.status(400).send("Cabeçalho de verificação não encontrado.");
 });
