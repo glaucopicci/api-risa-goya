@@ -27,6 +27,7 @@ app.get("/webhook", (req, res) => {
   console.log("Recebido GET em /webhook");
   if (verifyToken) {
     console.log("Header de verificação recebido:", verifyToken);
+    console.log("Enviando resposta de verificação:", verifyToken);
     return res
       .type("text/plain")
       .status(200)
