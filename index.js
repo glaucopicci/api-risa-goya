@@ -16,12 +16,12 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 app.get("/webhook", (req, res) => {
   const verifyToken = req.get("x-podio-webhook-verify");
   if (verifyToken) {
-    const buffer = Buffer.from(verifyToken, "utf-8");
     res.setHeader("Content-Type", "text/plain");
-    res.setHeader("Content-Length", buffer.length);
-    return res.status(200).send(buffer);
+    res.setHeader("Content-Length", Buffer.byteLength(verifyToken, "utf-8"));
+    res.write(verifyToken);
+    return res.end();
   }
-  return res.status(400).send("Cabeçalho de verificação não encontrado.");
+  res.status(400).send("Cabeçalho de verificação não encontrado.");
 });
 
 
