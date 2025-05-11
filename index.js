@@ -1,81 +1,118 @@
 import express from "express";
-import bodyParser from "body-parser";
-import { config } from "dotenv";
-import OpenAI from "openai";
-import { api as Podio } from "podio-js";
+import fetch from "node-fetch";
+import dotenv from "dotenv";
 
-config();
+dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 10000;
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+app.use(express.json());
 
-app.use(bodyParser.json());
+const PORT = 10000;
+const PODIO_ACCESS_TOKEN = process.env.PODIO_ACCESS_TOKEN;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// Inicialização do cliente Podio
-const podio = new Podio({
-  authType: "oauth",
-  clientId: process.env.PODIO_CLIENT_ID,
-  clientSecret: process.env.PODIO_CLIENT_SECRET,
-});
+// 🧪 Verificação do webhook
+app.post("/webhook", async (req, res) => {
+  const { type, hook_id, code, item_id } = req.body;
 
-// Autenticação no Podio via OAuth2 (use seus tokens)
-(async () => {
-  try {
-    podio.setTokens({
-      access_token: process.env.PODIO_ACCESS_TOKEN,
-      refresh_token: process.env.PODIO_REFRESH_TOKEN,
-    });
-    console.log('Autenticado no Podio');
-  } catch (err) {
-    console.error('Erro na autenticação Podio:', err);
-  }
-})();
-
-// Rota única para webhooks do Podio
-app.post('/webhook', async (req, res) => {
-  const { type, hook_id, code } = req.body;
-
-  // Tratamento de verificação do webhook
-  if (type === 'hook.verify') {
+  // 🔐 Responder ao hook.verify
+  if (type === "hook.verify" && hook_id && code) {
     try {
-      await podio.request('POST', `/hook/${hook_id}/verify`, { code });
-      console.log(`Webhook ${hook_id} verificado com sucesso`);
-      return res.sendStatus(200);
-    } catch (err) {
-      console.error('Falha ao validar webhook:', err);
-      return res.sendStatus(500);
+      const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
+        },
+        body: JSON.stringify({ code }),
+      });
+
+      if (response.ok) {
+        console.log(`✅ Webhook ${hook_id} verificado com sucesso.`);
+        return res.status(200).send();
+      } else {
+        throw new Error("Falha na verificação do webhook");
+      }
+    } catch (error) {
+      console.error("Erro ao verificar webhook:", error);
+      return res.status(500).send();
     }
   }
 
-  // Processamento de eventos (item.create, item.update, etc.)
-  try {
-    // Extrai o texto a ser revisado do payload
-    const texto = req.body.texto || req.body.text || req.body.content;
-    if (!texto) {
-      console.warn('Nenhum texto encontrado no payload');
-      return res.status(200).send({ mensagem: 'Nenhum texto para revisar.' });
+  // 🚀 Disparo real com item.update
+  if (item_id) {
+    try {
+      const podioResponse = await fetch(`https://api.podio.com/item/${item_id}`, {
+        method: "GET",
+        headers: {
+          Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
+        },
+      });
+
+      const data = await podioResponse.json();
+
+      const fields = data.fields;
+
+      // 🕵️ Buscar o campo "Status do Texto" (external_id: status)
+      const statusField = fields.find(f => f.external_id === "status");
+      const statusLabel = statusField?.values?.[0]?.value?.text;
+
+      if (statusLabel?.toLowerCase() !== "revisar") {
+        console.log("⏭️ Status diferente de 'Revisar', ignorando...");
+        return res.status(200).send();
+      }
+
+      // 🎯 Buscar campos para compor o texto a ser revisado
+      const titulo = fields.find(f => f.external_id === "titulo-2")?.values?.[0]?.value || "(sem título)";
+      const cliente = fields.find(f => f.external_id === "cliente")?.values?.[0]?.title || "(sem cliente)";
+      const briefing = fields.find(f => f.external_id === "observacoes-e-links")?.values?.[0]?.value || "";
+
+      const textoParaRevisar = `
+Título: ${titulo}
+Cliente: ${cliente}
+Briefing: ${briefing}
+      `.trim();
+
+      console.log("✍️ Texto enviado para revisão:", textoParaRevisar);
+
+      const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4",
+          messages: [
+            {
+              role: "system",
+              content: "Você é Risa, uma IA editorial treinada para revisar textos institucionais com clareza, coesão e tom de marca.",
+            },
+            {
+              role: "user",
+              content: `Revise o texto abaixo com atenção à clareza, tom e coesão:\n\n${textoParaRevisar}`,
+            },
+          ],
+          temperature: 0.7,
+        }),
+      });
+
+      const json = await openaiResponse.json();
+      const revisao = json.choices?.[0]?.message?.content;
+
+      console.log("✅ Revisão gerada:", revisao);
+      res.status(200).send("Revisão enviada com sucesso.");
+
+    } catch (err) {
+      console.error("❌ Erro ao processar item:", err);
+      res.status(500).send("Erro interno");
     }
-
-    // Chamada à OpenAI para revisão de texto
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'Você é um assistente que revisa e melhora textos.' },
-        { role: 'user', content: `Revise o seguinte texto:\n\n${texto}` },
-      ],
-    });
-
-    const reply = response.choices[0]?.message?.content;
-    console.log('Revisão gerada:', reply);
-    return res.status(200).send({ resposta: reply });
-  } catch (error) {
-    console.error('Erro no processamento do webhook:', error);
-    return res.status(500).send({ erro: 'Falha ao processar o evento.' });
+  } else {
+    res.status(200).send("OK");
   }
 });
 
-app.listen(port, () => {
-  console.log(`Servidor rodando na porta ${port}`);
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
 
