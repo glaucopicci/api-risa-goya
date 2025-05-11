@@ -12,6 +12,13 @@ app.use(bodyParser.json());
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+app.get("/webhook-debug", (req, res) => {
+  console.log("🔍 Debug Podio Webhook:");
+  console.log("Headers recebidos:", req.headers);
+
+  res.status(200).send("Debug recebido. Verifique os logs.");
+});
+
 // Verificação de webhook do Podio
 app.get("/webhook", (req, res) => {
   const verifyToken = req.headers["x-podio-webhook-verify"];
