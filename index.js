@@ -1,7 +1,6 @@
 import express from "express";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
-console.log("🔑 Podio token presente?", !!PODIO_ACCESS_TOKEN);
 
 dotenv.config();
 
@@ -14,6 +13,9 @@ app.use(express.json());
 const PORT = process.env.PORT || 10000;
 const PODIO_ACCESS_TOKEN = process.env.PODIO_ACCESS_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+// DEBUG: verifique no deploy se aparece true
+console.log("🔑 Podio token presente?", !!PODIO_ACCESS_TOKEN);
 
 app.post("/webhook", async (req, res) => {
   const { type, hook_id, code, item_id } = req.body;
