@@ -24,10 +24,10 @@ app.post("/webhook", async (req, res) => {
     try {
       const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify/validate`, {
         method: "POST",
-        headers: {
-          Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
+headers: {
+  Authorization: `Bearer ${PODIO_ACCESS_TOKEN}`,
+  "Content-Type": "application/x-www-form-urlencoded",
+},
         body: new URLSearchParams({ code }),
       });
 
