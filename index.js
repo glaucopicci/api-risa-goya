@@ -5,34 +5,42 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(express.urlencoded({ extended: true })); // necessário para receber x-www-form-urlencoded
+
+// Permite que o Express entenda o corpo vindo como application/x-www-form-urlencoded
+app.use(express.urlencoded({ extended: true }));
+
+// Também permite JSON, usado em outros momentos (ex: payload do item_id)
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 const PODIO_ACCESS_TOKEN = process.env.PODIO_ACCESS_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// 🔐 Verificação do webhook (POST com type=hook.verify)
+// Rota única para o webhook do Podio
 app.post("/webhook", async (req, res) => {
   const { type, hook_id, code, item_id } = req.body;
 
-  // Verificação do webhook
+  // Debug útil para entender o que o Podio está enviando
+  console.log("📨 Dados recebidos:", req.body);
+
+  // 🧩 Verificação inicial de webhook enviada pelo Podio (type = hook.verify)
   if (type === "hook.verify") {
     try {
-const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify`, {
-  method: "POST",
-  headers: {
-    Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
-    "Content-Type": "application/x-www-form-urlencoded",
-  },
-  body: new URLSearchParams({ code }).toString(),
-});
+      const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify`, {
+        method: "POST",
+        headers: {
+          Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
+          "Content-Type": "application/x-www-form-urlencoded", // 👈 O detalhe mais importante
+        },
+        body: new URLSearchParams({ code }).toString(),
+      });
 
       if (response.ok) {
         console.log(`🔐 Webhook ${hook_id} verificado com sucesso`);
         return res.status(200).send("Verificado");
       } else {
-        console.error("❌ Falha na verificação:", await response.text());
+        const errText = await response.text();
+        console.error("❌ Falha na verificação:", errText);
         return res.status(500).send("Erro ao verificar webhook");
       }
     } catch (err) {
@@ -41,7 +49,7 @@ const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify`, {
     }
   }
 
-  // 🚚 Processamento normal do webhook após ativado
+  // 🔄 Processamento do item após o webhook estar ativo
   if (item_id) {
     try {
       console.log("📦 Recebido item_id:", item_id);
@@ -56,7 +64,6 @@ const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify`, {
       const data = await podioResponse.json();
       const fields = data.fields;
 
-      // Buscar status
       const statusField = fields.find(f => f.external_id === "status");
       const statusLabel = statusField?.values?.[0]?.value?.text;
 
@@ -109,11 +116,12 @@ Briefing: ${briefing}
       return res.status(500).send("Erro interno");
     }
   } else {
-    console.log("ℹ️ Requisição sem item_id — ignorando.");
+    console.log("ℹ️ Webhook recebido sem item_id");
     return res.status(200).send("OK (sem item_id)");
   }
 });
 
+// Inicializa o servidor
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
