@@ -6,31 +6,27 @@ dotenv.config();
 
 const app = express();
 
-// Permite que o Express entenda o corpo vindo como application/x-www-form-urlencoded
+// Middleware para interpretar application/x-www-form-urlencoded e JSON
 app.use(express.urlencoded({ extended: true }));
-
-// Também permite JSON, usado em outros momentos (ex: payload do item_id)
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 const PODIO_ACCESS_TOKEN = process.env.PODIO_ACCESS_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// Rota única para o webhook do Podio
 app.post("/webhook", async (req, res) => {
   const { type, hook_id, code, item_id } = req.body;
 
-  // Debug útil para entender o que o Podio está enviando
   console.log("📨 Dados recebidos:", req.body);
 
-  // 🧩 Verificação inicial de webhook enviada pelo Podio (type = hook.verify)
+  // ✅ VERIFICAÇÃO DO HOOK (corrigida para a rota correta da API do Podio)
   if (type === "hook.verify") {
     try {
-      const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify`, {
+      const response = await fetch(`https://api.podio.com/hook/verify/${hook_id}`, {
         method: "POST",
         headers: {
           Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
-          "Content-Type": "application/x-www-form-urlencoded", // 👈 O detalhe mais importante
+          "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({ code }).toString(),
       });
@@ -49,7 +45,7 @@ app.post("/webhook", async (req, res) => {
     }
   }
 
-  // 🔄 Processamento do item após o webhook estar ativo
+  // ✅ PROCESSAMENTO NORMAL COM item_id
   if (item_id) {
     try {
       console.log("📦 Recebido item_id:", item_id);
@@ -121,7 +117,6 @@ Briefing: ${briefing}
   }
 });
 
-// Inicializa o servidor
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
