@@ -23,9 +23,9 @@ const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify`, {
   method: "POST",
   headers: {
     Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
-    "Content-Type": "application/json",
+    "Content-Type": "application/x-www-form-urlencoded",
   },
-  body: JSON.stringify({ code }),
+  body: new URLSearchParams({ code }).toString(),
 });
 
       if (response.ok) {
