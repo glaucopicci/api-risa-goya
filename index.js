@@ -5,8 +5,6 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-
-// Middleware necessário para lidar com corpo em x-www-form-urlencoded
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
@@ -19,33 +17,38 @@ app.post("/webhook", async (req, res) => {
 
   console.log("📨 Dados recebidos:", req.body);
 
-  // ✅ ETAPA 1 — Validação de webhook
+  // ✅ VERIFICAÇÃO DE WEBHOOK
   if (type === "hook.verify") {
-    try {
-      const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify/validate`, {
-        method: "POST",
-headers: {
-  Authorization: `Bearer ${PODIO_ACCESS_TOKEN}`,
-  "Content-Type": "application/x-www-form-urlencoded",
-},
-        body: new URLSearchParams({ code }),
-      });
+    console.log("🔑 PODIO_ACCESS_TOKEN presente?", !!PODIO_ACCESS_TOKEN);
+    console.log(`🔗 Validando webhook ${hook_id} com code=${code}`);
 
-      if (response.ok) {
-        console.log(`🔐 Webhook ${hook_id} validado com sucesso`);
-        return res.sendStatus(200);
-      } else {
-        const errorText = await response.text();
-        console.error("❌ Falha na verificação:", errorText);
-        return res.status(500).send("Erro ao verificar webhook");
-      }
+    try {
+      const validateRes = await fetch(
+        `https://api.podio.com/hook/${hook_id}/verify/validate`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${PODIO_ACCESS_TOKEN}`,
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ code }),
+        }
+      );
+
+      const text = await validateRes.text();
+      console.log("📥 Resposta do Podio:", validateRes.status, text);
+
+      if (!validateRes.ok) throw new Error(`Status ${validateRes.status}: ${text}`);
+      console.log(`🔐 Webhook validado com sucesso!`);
+      return res.sendStatus(200);
     } catch (err) {
       console.error("❌ Erro na verificação:", err);
       return res.status(500).send("Erro interno na verificação");
     }
   }
 
-  // ✅ ETAPA 2 — Processamento de item após webhook ativado
+  // ✅ PROCESSAMENTO DE ITEM
   if (item_id) {
     try {
       console.log("📦 Recebido item_id:", item_id);
@@ -53,7 +56,7 @@ headers: {
       const podioResponse = await fetch(`https://api.podio.com/item/${item_id}`, {
         method: "GET",
         headers: {
-          Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
+          Authorization: `Bearer ${PODIO_ACCESS_TOKEN}`,
         },
       });
 
@@ -113,7 +116,6 @@ Briefing: ${briefing}
     }
   }
 
-  // Caso nenhum dos fluxos seja ativado
   console.log("ℹ️ Webhook recebido sem item_id nem tipo conhecido");
   return res.status(200).send("OK");
 });
