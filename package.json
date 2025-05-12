@@ -14,3 +14,9 @@
     "podio-js": "^1.6.1"
   }
 }
+{
+  "name": "api-risa-goya",
+  "version": "1.0.0",
+  "type": "module",
+  …
+}
