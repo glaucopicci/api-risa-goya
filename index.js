@@ -19,14 +19,14 @@ app.post("/webhook", async (req, res) => {
   // Verificação do webhook
   if (type === "hook.verify") {
     try {
-      const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify`, {
-        method: "POST",
-        headers: {
-          Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ code }),
-      });
+const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify`, {
+  method: "POST",
+  headers: {
+    Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({ code }),
+});
 
       if (response.ok) {
         console.log(`🔐 Webhook ${hook_id} verificado com sucesso`);
