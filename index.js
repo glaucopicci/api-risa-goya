@@ -5,28 +5,43 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
+app.use(express.urlencoded({ extended: true })); // necessário para receber x-www-form-urlencoded
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 const PODIO_ACCESS_TOKEN = process.env.PODIO_ACCESS_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ✅ Verificação via GET (usada pelo Podio)
-app.get("/webhook", (req, res) => {
-  const verifyToken = req.headers["x-podio-webhook-verify"];
-  console.log("📩 Recebido GET /webhook");
-  if (verifyToken) {
-    console.log("🔐 Header de verificação recebido:", verifyToken);
-    res.setHeader("X-Podio-Webhook-Verify", verifyToken);
-    return res.status(200).send();
-  }
-  return res.status(400).send("Cabeçalho de verificação não encontrado.");
-});
-
-// ✅ Disparo real via POST
+// 🔐 Verificação do webhook (POST com type=hook.verify)
 app.post("/webhook", async (req, res) => {
-  const { item_id } = req.body;
+  const { type, hook_id, code, item_id } = req.body;
 
+  // Verificação do webhook
+  if (type === "hook.verify") {
+    try {
+      const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify`, {
+        method: "POST",
+        headers: {
+          Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ code }),
+      });
+
+      if (response.ok) {
+        console.log(`🔐 Webhook ${hook_id} verificado com sucesso`);
+        return res.status(200).send("Verificado");
+      } else {
+        console.error("❌ Falha na verificação:", await response.text());
+        return res.status(500).send("Erro ao verificar webhook");
+      }
+    } catch (err) {
+      console.error("❌ Erro ao validar webhook:", err);
+      return res.status(500).send("Erro interno");
+    }
+  }
+
+  // 🚚 Processamento normal do webhook após ativado
   if (item_id) {
     try {
       console.log("📦 Recebido item_id:", item_id);
@@ -88,13 +103,14 @@ Briefing: ${briefing}
       const revisao = json.choices?.[0]?.message?.content;
 
       console.log("✅ Revisão gerada:", revisao);
-      res.status(200).send("Revisão enviada com sucesso.");
+      return res.status(200).send("Revisão enviada com sucesso.");
     } catch (err) {
       console.error("❌ Erro ao processar item:", err);
-      res.status(500).send("Erro interno");
+      return res.status(500).send("Erro interno");
     }
   } else {
-    res.status(200).send("OK (sem item_id)");
+    console.log("ℹ️ Requisição sem item_id — ignorando.");
+    return res.status(200).send("OK (sem item_id)");
   }
 });
 
