@@ -12,7 +12,7 @@ const PODIO_ACCESS_TOKEN = process.env.PODIO_ACCESS_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // ✅ Verificação via GET (usada pelo Podio)
-app.get("/webhook", (req, res) => {
+app.get("/webhook-v2", (req, res) => {
   const verifyToken = req.headers["x-podio-webhook-verify"];
   console.log("📩 Recebido GET /webhook");
   if (verifyToken) {
@@ -24,7 +24,7 @@ app.get("/webhook", (req, res) => {
 });
 
 // ✅ Disparo real via POST
-app.post("/webhook", async (req, res) => {
+app.post("/webhook-v2", async (req, res) => {
   const { item_id } = req.body;
 
   if (item_id) {
