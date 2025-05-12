@@ -6,7 +6,7 @@ dotenv.config();
 
 const app = express();
 
-// Middleware para interpretar application/x-www-form-urlencoded e JSON
+// Middleware necessário para lidar com corpo em x-www-form-urlencoded
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
@@ -19,33 +19,33 @@ app.post("/webhook", async (req, res) => {
 
   console.log("📨 Dados recebidos:", req.body);
 
-  // ✅ VERIFICAÇÃO DO HOOK (corrigida para a rota correta da API do Podio)
+  // ✅ ETAPA 1 — Validação de webhook
   if (type === "hook.verify") {
     try {
-      const response = await fetch(`https://api.podio.com/hook/verify/${hook_id}`, {
+      const response = await fetch(`https://api.podio.com/hook/${hook_id}/verify/validate`, {
         method: "POST",
         headers: {
           Authorization: `OAuth2 ${PODIO_ACCESS_TOKEN}`,
           "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: new URLSearchParams({ code }).toString(),
+        body: new URLSearchParams({ code }),
       });
 
       if (response.ok) {
-        console.log(`🔐 Webhook ${hook_id} verificado com sucesso`);
-        return res.status(200).send("Verificado");
+        console.log(`🔐 Webhook ${hook_id} validado com sucesso`);
+        return res.sendStatus(200);
       } else {
-        const errText = await response.text();
-        console.error("❌ Falha na verificação:", errText);
+        const errorText = await response.text();
+        console.error("❌ Falha na verificação:", errorText);
         return res.status(500).send("Erro ao verificar webhook");
       }
     } catch (err) {
-      console.error("❌ Erro ao validar webhook:", err);
-      return res.status(500).send("Erro interno");
+      console.error("❌ Erro na verificação:", err);
+      return res.status(500).send("Erro interno na verificação");
     }
   }
 
-  // ✅ PROCESSAMENTO NORMAL COM item_id
+  // ✅ ETAPA 2 — Processamento de item após webhook ativado
   if (item_id) {
     try {
       console.log("📦 Recebido item_id:", item_id);
@@ -64,7 +64,7 @@ app.post("/webhook", async (req, res) => {
       const statusLabel = statusField?.values?.[0]?.value?.text;
 
       if (statusLabel?.toLowerCase() !== "revisar") {
-        console.log("⏭️ Status não é 'Revisar' — ignorando.");
+        console.log("⏭️ Status diferente de 'Revisar' — ignorando.");
         return res.status(200).send();
       }
 
@@ -109,12 +109,13 @@ Briefing: ${briefing}
       return res.status(200).send("Revisão enviada com sucesso.");
     } catch (err) {
       console.error("❌ Erro ao processar item:", err);
-      return res.status(500).send("Erro interno");
+      return res.status(500).send("Erro interno ao revisar item");
     }
-  } else {
-    console.log("ℹ️ Webhook recebido sem item_id");
-    return res.status(200).send("OK (sem item_id)");
   }
+
+  // Caso nenhum dos fluxos seja ativado
+  console.log("ℹ️ Webhook recebido sem item_id nem tipo conhecido");
+  return res.status(200).send("OK");
 });
 
 app.listen(PORT, () => {
