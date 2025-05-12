@@ -16,12 +16,12 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 app.post("/webhook", async (req, res) => {
   // Desestruturação incluindo revision_id
   const { type, hook_id, code, item_id, item_revision_id } = req.body;
-  console.log("📨 Dados recebidos:", req.body);
+  //console.log("📨 Dados recebidos:", req.body);
 
   // ETAPA 1 — Validação do webhook (hook.verify)
   if (type === "hook.verify") {
     try {
-      console.log(`🔗 Validando webhook ${hook_id} com code=${code}`);
+      console.log(`🔗 Validando webhook ${hook_id}`);
       const response = await fetch(
         `https://api.podio.com/hook/${hook_id}/verify/validate`,
         {
@@ -48,7 +48,7 @@ app.post("/webhook", async (req, res) => {
     }
   }
 
-  // ETAPA 2 — Processamento de item.update somente quando status for Revisar
+  // ETAPA 2 — Somente se item.update e status for Revisar
   if (type === "item.update" && item_id) {
     try {
       // 1) Obter campos alterados na revisão
@@ -74,6 +74,7 @@ app.post("/webhook", async (req, res) => {
       const statusChange = changedFields.find(f => f.external_id === "status");
       const newStatus = statusChange?.values?.[0]?.value?.text?.toLowerCase();
       if (newStatus !== "revisar") {
+        console.log("📦 Processando revisão para item_id:", item_id);
         console.log(`⏭️ Status mudou para "${newStatus || 'desconhecido'}" — ignorando.`);
         return res.sendStatus(200);
       }
