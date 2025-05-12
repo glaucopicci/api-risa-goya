@@ -1,6 +1,7 @@
 import express from "express";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
+console.log("🔑 Podio token presente?", !!PODIO_ACCESS_TOKEN);
 
 dotenv.config();
 
