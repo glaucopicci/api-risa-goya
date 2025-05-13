@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// ── Função para obter um access_token sempre fresco ──
+// ── FUNÇÃO DE REFRESH TOKEN ─────────────────────────────────────────────
 async function getAccessToken() {
   const resp = await fetch("https://podio.com/oauth/token", {
     method: "POST",
@@ -17,66 +17,57 @@ async function getAccessToken() {
     })
   });
 
-  const json = await resp.json();
+  const data = await resp.json();
   if (!resp.ok) {
     throw new Error(
-      `Falha ao renovar token Podio (${resp.status}): ${json.error_description || JSON.stringify(json)}`
+      `Falha ao renovar Podio token (${resp.status}): ${data.error_description || JSON.stringify(data)}`
     );
   }
-
-  // Opcional: se quiser atualizar o refresh_token em runtime:
-  // process.env.PODIO_REFRESH_TOKEN = json.refresh_token;
-
-  return json.access_token;
+  return data.access_token;
 }
 
+// ── CONFIGURAÇÃO DO EXPRESS ─────────────────────────────────────────────
 const app = express();
-
-// Middlewares para parsing de JSON e form-urlencoded
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
-const PODIO_ACCESS_TOKEN = process.env.PODIO_ACCESS_TOKEN;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// DEBUG: verifique no deploy se aparece true
-console.log("🔑 Podio token presente?", !!PODIO_ACCESS_TOKEN);
+// ── HANDLER DO WEBHOOK ──────────────────────────────────────────────────
+app.post("/webhook", async (req, res) => {
+  // 1) Primeiro, garanta um token válido do Podio
+  let podioToken;
+  try {
+    podioToken = await getAccessToken();
+  } catch (err) {
+    console.error("🚨 Erro ao renovar Podio token:", err);
+    return res.sendStatus(500);
+  }
 
-
- app.post("/webhook", async (req, res) => {
-   // 1) Todo fluxo do Podio começa com um token fresco
-   let podioToken;
-   try {
-     podioToken = await getAccessToken();
-   } catch (err) {
-     console.error("🚨 Não foi possível obter Podio token:", err);
-     return res.sendStatus(500);
-   }
-   const { type, hook_id, code, item_id, item_revision_id } = req.body;
-
+  const { type, hook_id, code, item_id, item_revision_id } = req.body;
 
   //
-  // ETAPA 2 — Validação do webhook no Podio
+  // ETAPA 1 — VALIDAÇÃO DO WEBHOOK (hook.verify)
   //
   if (type === "hook.verify") {
+    console.log(`🔗 Validando webhook ${hook_id}`);
     try {
-      console.log(`🔗 Validando webhook ${hook_id}`);
       const verifyRes = await fetch(
         `https://api.podio.com/hook/${hook_id}/verify/validate`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${podioToken}`
-            Accept: "application/json",
+            Authorization: `Bearer ${podioToken}`,
             "Content-Type": "application/json",
+            Accept: "application/json"
           },
-          body: JSON.stringify({ code }),
+          body: JSON.stringify({ code })
         }
       );
       if (!verifyRes.ok) {
-        const errText = await verifyRes.text();
-        console.error("❌ Falha na verificação:", errText);
+        const text = await verifyRes.text();
+        console.error("❌ Falha na verificação:", verifyRes.status, text);
         return res.sendStatus(500);
       }
       console.log(`🔐 Webhook ${hook_id} validado com sucesso`);
@@ -88,65 +79,99 @@ console.log("🔑 Podio token presente?", !!PODIO_ACCESS_TOKEN);
   }
 
   //
-  // ETAPA 3 — Processar ITEM.UPDATE **somente** se Status Texto for "Revisar"
+  // ETAPA 2 — PROCESSAMENTO DE item.update **SOMENTE** SE status → “revisar”
   //
   if (type === "item.update" && item_id && item_revision_id) {
+    // 2.1) Consulta apenas o delta da revisão
+    let revData;
     try {
-      // 1) Busca o item completo no Podio
-      const itemRes = await fetch(`https://api.podio.com/item/${item_id}`, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${podioToken}`,
-          Accept: "application/json",
-        },
-      });
+      const revRes = await fetch(
+        `https://api.podio.com/item/${item_id}/revision/${item_revision_id}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${podioToken}`,
+            Accept: "application/json"
+          }
+        }
+      );
+      if (!revRes.ok) {
+        // se não conseguiu ou não mudou nada relevante, ignora
+        return res.sendStatus(200);
+      }
+      revData = await revRes.json();
+    } catch (err) {
+      console.error("⚠️ Erro ao obter revision:", err);
+      return res.sendStatus(200);
+    }
+
+    // 2.2) Filtra mudança no campo “status”
+    const changedFields = Array.isArray(revData.fields) ? revData.fields : [];
+    const statusChange = changedFields.find(f => f.external_id === "status");
+    const newStatus = statusChange?.values?.[0]?.value?.text?.toLowerCase();
+    if (newStatus !== "revisar") {
+      // não é o status “Revisar” → fim de linha
+      return res.sendStatus(200);
+    }
+
+    console.log("📦 Processando revisão para item_id:", item_id);
+
+    //
+    // ETAPA 3 — BUSCA DO ITEM COMPLETO E EXTRAÇÃO DE CAMPOS
+    //
+    let itemData;
+    try {
+      const itemRes = await fetch(
+        `https://api.podio.com/item/${item_id}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${podioToken}`,
+            Accept: "application/json"
+          }
+        }
+      );
       if (!itemRes.ok) {
-        console.warn(`⚠️ Não foi possível buscar item ${item_id}: ${itemRes.status}`);
+        console.error(`⚠️ Erro ao buscar item ${item_id}: ${itemRes.status}`);
         return res.sendStatus(200);
       }
+      itemData = await itemRes.json();
+    } catch (err) {
+      console.error("❌ Erro ao buscar item completo:", err);
+      return res.sendStatus(200);
+    }
 
-      const itemData = await itemRes.json();
-      const fields = Array.isArray(itemData.fields) ? itemData.fields : [];
+    const fields = Array.isArray(itemData.fields) ? itemData.fields : [];
+    const titulo =
+      fields.find(f => f.external_id === "titulo-2")?.values?.[0]?.value ||
+      "(sem título)";
+    const cliente =
+      fields.find(f => f.external_id === "cliente")?.values?.[0]?.title ||
+      "(sem cliente)";
+    const briefing =
+      fields.find(f => f.external_id === "observacoes-e-links")?.values?.[0]
+        ?.value || "";
 
-      // 2) Extrai o valor atual do campo "status" (Status Texto)
-      const statusField = fields.find((f) => f.external_id === "status");
-      const statusLabel = statusField?.values?.[0]?.value?.text?.toLowerCase();
-
-      // 3) Se não for "revisar", ignora imediatamente
-      if (statusLabel !== "revisar") {
-        return res.sendStatus(200);
-      }
-
-      // 4) Só agora logamos e processamos
-      console.log("📦 Processando revisão para item_id:", item_id);
-
-      // 5) Extrai título, cliente e briefing
-      const titulo =
-        fields.find((f) => f.external_id === "titulo-2")?.values?.[0]?.value ||
-        "(sem título)";
-      const cliente =
-        fields.find((f) => f.external_id === "cliente")?.values?.[0]?.title ||
-        "(sem cliente)";
-      const briefing =
-        fields.find((f) => f.external_id === "observacoes-e-links")?.values?.[0]
-          ?.value || "";
-
-      const textoParaRevisar = `
+    const textoParaRevisar = `
 Título: ${titulo}
 Cliente: ${cliente}
 Briefing: ${briefing}
-      `.trim();
+    `.trim();
 
-      console.log("✍️ Texto para revisão:", textoParaRevisar);
+    console.log("✍️ Texto para revisão:", textoParaRevisar);
 
-      // 6) Chama a OpenAI para gerar a revisão
+    //
+    // ETAPA 4 — CHAMADA À OPENAI
+    //
+    let revisao;
+    try {
       const openaiRes = await fetch(
         "https://api.openai.com/v1/chat/completions",
         {
           method: "POST",
           headers: {
             Authorization: `Bearer ${OPENAI_API_KEY}`,
-            "Content-Type": "application/json",
+            "Content-Type": "application/json"
           },
           body: JSON.stringify({
             model: "gpt-4",
@@ -154,40 +179,48 @@ Briefing: ${briefing}
               {
                 role: "system",
                 content:
-                  "Você é Risa, nossa IA editorial. Revise o texto abaixo em formato de tópicos, focando em clareza, coesão e tom de marca.",
+                  "Você é Risa, nossa IA editorial. Revise o texto abaixo em tópicos, focando em clareza, coesão e tom de marca."
               },
-              { role: "user", content: textoParaRevisar },
+              { role: "user", content: textoParaRevisar }
             ],
-            temperature: 0.7,
-          }),
+            temperature: 0.7
+          })
         }
       );
-      const openaiJson = await openaiRes.json();
-      const revisao = openaiJson.choices?.[0]?.message?.content || "";
+      const o = await openaiRes.json();
+      revisao = o.choices?.[0]?.message?.content || "";
+    } catch (err) {
+      console.error("❌ Erro na chamada OpenAI:", err);
+      return res.sendStatus(500);
+    }
 
-      console.log("✅ Revisão gerada:", revisao);
+    console.log("✅ Revisão gerada");
 
-      // 7) Publica a revisão como um comentário no Podio
+    //
+    // ETAPA 5 — GRAVAÇÃO COMO COMENTÁRIO NO PODIO
+    //
+    try {
       await fetch(`https://api.podio.com/item/${item_id}/comment/`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${PODIO_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
+          Authorization: `Bearer ${podioToken}`,
+          "Content-Type": "application/json"
         },
-        body: JSON.stringify({ value: revisao }),
+        body: JSON.stringify({ value: revisao })
       });
-
-      return res.sendStatus(200);
+      console.log("💬 Comentário registrado no Podio");
     } catch (err) {
-      console.error("❌ Erro ao processar item.update:", err);
-      return res.sendStatus(500);
+      console.error("❌ Erro ao postar comentário:", err);
     }
+
+    return res.sendStatus(200);
   }
 
-  // Qualquer outro evento que não seja hook.verify ou item.update → OK
+  // tudo mais → silenciar
   return res.sendStatus(200);
 });
 
+// ── START DO SERVIDOR ───────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
