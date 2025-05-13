@@ -4,6 +4,32 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+// ── Função para obter um access_token sempre fresco ──
+async function getAccessToken() {
+  const resp = await fetch("https://podio.com/oauth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "refresh_token",
+      client_id: process.env.PODIO_CLIENT_ID,
+      client_secret: process.env.PODIO_CLIENT_SECRET,
+      refresh_token: process.env.PODIO_REFRESH_TOKEN
+    })
+  });
+
+  const json = await resp.json();
+  if (!resp.ok) {
+    throw new Error(
+      `Falha ao renovar token Podio (${resp.status}): ${json.error_description || JSON.stringify(json)}`
+    );
+  }
+
+  // Opcional: se quiser atualizar o refresh_token em runtime:
+  // process.env.PODIO_REFRESH_TOKEN = json.refresh_token;
+
+  return json.access_token;
+}
+
 const app = express();
 
 // Middlewares para parsing de JSON e form-urlencoded
@@ -17,11 +43,21 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 // DEBUG: verifique no deploy se aparece true
 console.log("🔑 Podio token presente?", !!PODIO_ACCESS_TOKEN);
 
-app.post("/webhook", async (req, res) => {
-  const { type, hook_id, code, item_id } = req.body;
+
+ app.post("/webhook", async (req, res) => {
+   // 1) Todo fluxo do Podio começa com um token fresco
+   let podioToken;
+   try {
+     podioToken = await getAccessToken();
+   } catch (err) {
+     console.error("🚨 Não foi possível obter Podio token:", err);
+     return res.sendStatus(500);
+   }
+   const { type, hook_id, code, item_id, item_revision_id } = req.body;
+
 
   //
-  // ETAPA 1 — Validação do webhook no Podio
+  // ETAPA 2 — Validação do webhook no Podio
   //
   if (type === "hook.verify") {
     try {
@@ -31,7 +67,7 @@ app.post("/webhook", async (req, res) => {
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${PODIO_ACCESS_TOKEN}`,
+            Authorization: `Bearer ${podioToken}`
             Accept: "application/json",
             "Content-Type": "application/json",
           },
@@ -52,15 +88,15 @@ app.post("/webhook", async (req, res) => {
   }
 
   //
-  // ETAPA 2 — Processar ITEM.UPDATE **somente** se Status Texto for "Revisar"
+  // ETAPA 3 — Processar ITEM.UPDATE **somente** se Status Texto for "Revisar"
   //
-  if (type === "item.update" && item_id) {
+  if (type === "item.update" && item_id && item_revision_id) {
     try {
       // 1) Busca o item completo no Podio
       const itemRes = await fetch(`https://api.podio.com/item/${item_id}`, {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${PODIO_ACCESS_TOKEN}`,
+          Authorization: `Bearer ${podioToken}`,
           Accept: "application/json",
         },
       });
