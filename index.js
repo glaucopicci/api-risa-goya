@@ -46,6 +46,15 @@ const PORT = process.env.PORT || 10000;
 
 // ── WEBHOOK HANDLER ────────────────────────────────────────────────────
 app.post("/webhook", async (req, res) => {
+  // Debug: payload e configuração
+  console.log("🔔 [webhook] req.body:", JSON.stringify(req.body, null, 2));
+  console.log("⚙️ [config]", {
+    PODIO_APP_ID: process.env.PODIO_APP_ID,
+    PODIO_WEBHOOK_ID: process.env.PODIO_WEBHOOK_ID,
+    PODIO_STATUS_FIELD_ID: process.env.PODIO_STATUS_FIELD_ID,
+    PODIO_STATUS_REVISAR_OPTION_ID: process.env.PODIO_STATUS_REVISAR_OPTION_ID
+  });
+
   const { type, hook_id, code, item_id, item_revision_id } = req.body;
 
   // 1) Normaliza string e verifica
@@ -102,6 +111,9 @@ app.post("/webhook", async (req, res) => {
       );
       if (!r.ok) return res.sendStatus(200);
       delta = await r.json();
+
+      // Debug: mostrar o array bruto de diffs
+      console.log("🗂️ [revision] raw diffs:", JSON.stringify(delta, null, 2));
     } catch {
       return res.sendStatus(200);
     }
