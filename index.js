@@ -3,6 +3,10 @@ import fetch from "node-fetch";
 import dotenv from "dotenv";
 
 dotenv.config();
+console.log(
+  "⚙️ DEBUG Podio Secret length:",
+  process.env.PODIO_CLIENT_SECRET?.length
+);
 
 // ── 1) Função de Refresh Token (form-encoded) ───────────────────────────
 async function getAccessToken() {
