@@ -1,4 +1,3 @@
-```javascript
 import express from 'express';
 import fetch from 'node-fetch';
 import { Configuration, OpenAIApi } from 'openai';
@@ -33,7 +32,7 @@ async function refreshAccessToken() {
   });
 
   if (!response.ok) {
-    throw new Error(`Falha ao renovar token: ${response.status}`);
+    throw new Error('Falha ao renovar token: ' + response.status);
   }
   const data = await response.json();
   PODIO_ACCESS_TOKEN = data.access_token;
@@ -133,5 +132,4 @@ ${briefing}`;
 app.listen(RENDER_PORT, () => {
   console.log(`Servidor rodando na porta ${RENDER_PORT}`);
 });
-```
 
