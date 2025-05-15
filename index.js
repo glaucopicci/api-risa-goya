@@ -19,7 +19,7 @@ async function refreshToken() {
     refresh_token: process.env.PODIO_REFRESH_TOKEN,
   });
 
-  const res = await fetch("https://podio.com/oauth/token", {
+  const res = await fetch(`https://api.podio.com/comment/item/${item_id}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body:   params.toString(),
