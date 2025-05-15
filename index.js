@@ -10,6 +10,38 @@ const app  = express();
 const PORT = process.env.PORT || 10000;
 app.use(express.json());
 
+// ── REFRESH TOKEN ──────────────────────────────
+async function refreshToken() {
+  const params = new URLSearchParams({
+    grant_type:    "refresh_token",
+    client_id:     process.env.PODIO_CLIENT_ID,
+    client_secret: process.env.PODIO_CLIENT_SECRET,
+    refresh_token: process.env.PODIO_REFRESH_TOKEN,
+  });
+
+  const res = await fetch(`https://api.podio.com/comment/item/${item_id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body:   params.toString(),
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error_description || JSON.stringify(json));
+  return json.access_token;
+}
+
+// ── OBTÉM TOKEN ────────────────────────────────
+async function getPodioToken() {
+  try {
+    return await refreshToken();
+  } catch {
+    console.warn("⚠️ Refresh falhou, usando token estático");
+    if (!STATIC_PODIO_TOKEN) throw new Error("PODIO_ACCESS_TOKEN não definido");
+    return STATIC_PODIO_TOKEN;
+  }
+}
+
+// ── ROTA /revisar ──────────────────────────────
 app.post("/revisar", async (req, res) => {
   const { item_id, revision_id } = req.body;
 
@@ -20,13 +52,16 @@ app.post("/revisar", async (req, res) => {
 
   console.log(`📥 Recebido do proxy: item_id=${item_id}, revision_id=${revision_id}`);
 
-  const token = STATIC_PODIO_TOKEN;
-  if (!token) {
-    console.error("❌ Nenhum access_token definido");
+  // 1) Autentica com Podio
+  let token;
+  try {
+    token = await getPodioToken();
+  } catch (err) {
+    console.error("❌ Falha ao obter token:", err);
     return res.sendStatus(500);
   }
 
-  // 1) Busca item completo
+  // 2) Busca item completo
   let itemData;
   try {
     const ir = await fetch(`https://api.podio.com/item/${item_id}`, {
@@ -47,7 +82,7 @@ app.post("/revisar", async (req, res) => {
     return res.sendStatus(500);
   }
 
-  // 2) Extrai campos
+  // 3) Extrai campos
   const fields   = Array.isArray(itemData.fields) ? itemData.fields : [];
   const titulo   = fields.find(f => f.external_id === "titulo-2")?.values?.[0]?.value || "(sem título)";
   const cliente  = fields.find(f => f.external_id === "cliente")?.values?.[0]?.title  || "(sem cliente)";
@@ -61,7 +96,7 @@ app.post("/revisar", async (req, res) => {
 
   console.log("✍️ Texto para revisão:", textoParaRevisar);
 
-  // 3) Chamada OpenAI
+  // 4) Chamada OpenAI
   let revisao;
   try {
     const or = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -92,9 +127,9 @@ app.post("/revisar", async (req, res) => {
 
   console.log("✅ Revisão recebida do modelo");
 
-  // 4) Publica no Podio como comentário (URL corrigida)
+  // 5) Publica no Podio como comentário (usando token dinâmico)
   try {
-    const commentResponse = await fetch(`https://api.podio.com/comment/item/${item_id}`, {
+    const commentResponse = await fetch(`https://api.podio.com/item/${item_id}/comment/`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -103,9 +138,9 @@ app.post("/revisar", async (req, res) => {
       body: JSON.stringify({ value: revisao }),
     });
 
-    const commentText = await commentResponse.text();
     if (!commentResponse.ok) {
-      console.error("❌ Erro ao postar comentário:", commentResponse.status, commentText);
+      const errText = await commentResponse.text();
+      console.error("❌ Erro ao postar comentário:", commentResponse.status, errText);
       return res.sendStatus(500);
     }
 
@@ -118,7 +153,7 @@ app.post("/revisar", async (req, res) => {
   return res.sendStatus(200);
 });
 
+// ── START ──────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
-
