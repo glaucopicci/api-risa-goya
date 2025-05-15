@@ -1,6 +1,6 @@
 import express from 'express';
 import fetch from 'node-fetch';
-import { Configuration, OpenAIApi } from 'openai';
+import OpenAI from 'openai';
 
 // Carregando variáveis de ambiente do Render
 const PODIO_CLIENT_ID     = process.env.PODIO_CLIENT_ID;
@@ -15,7 +15,7 @@ const app = express();
 app.use(express.json());
 
 // Instância do OpenAI
-const openai = new OpenAIApi(new Configuration({ apiKey: OPENAI_API_KEY }));
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 // Função para renovar o token de acesso do Podio
 async function refreshAccessToken() {
@@ -104,18 +104,17 @@ app.post('/revisar', async (req, res) => {
     const briefing = briefingField?.values[0]?.value || '';
 
     // Compondo prompt para a Risa
-    const prompt = `Revisar texto de cliente ${cliente} com título “${titulo}” e briefing:
-${briefing}`;
+    const prompt = `Revisar texto de cliente ${cliente} com título “${titulo}” e briefing:\n${briefing}`;
 
     // Chamada à OpenAI
-    const completion = await openai.createChatCompletion({
-      model:  'g-67ddadfd22d881919a658cea6d5dc29f-risa',
+    const completion = await openai.chat.completions.create({
+      model: 'g-67ddadfd22d881919a658cea6d5dc29f-risa',
       messages: [
-        { role: 'system',   content: 'Você é a Risa, assistente de revisão de textos.' },
-        { role: 'user',     content: prompt }
+        { role: 'system', content: 'Você é a Risa, assistente de revisão de textos.' },
+        { role: 'user',   content: prompt }
       ]
     });
-    const revisao = completion.data.choices[0].message.content;
+    const revisao = completion.choices[0].message.content;
 
     // Publica comentário no Podio
     await podioPost(`/comment/item/${item_id}/`, { value: revisao });
