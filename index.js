@@ -16,24 +16,31 @@ const {
 
 let podioAccessToken = initialAccessToken;
 
+/**
+ * Renova o token OAuth do Podio usando form-encoded.
+ */
 async function refreshAccessToken() {
+  const params = new URLSearchParams();
+  params.append('grant_type', 'refresh_token');
+  params.append('client_id', PODIO_CLIENT_ID);
+  params.append('client_secret', PODIO_CLIENT_SECRET);
+  params.append('refresh_token', PODIO_REFRESH_TOKEN);
+
   const response = await fetch('https://podio.com/oauth/token', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      grant_type: 'refresh_token',
-      client_id: PODIO_CLIENT_ID,
-      client_secret: PODIO_CLIENT_SECRET,
-      refresh_token: PODIO_REFRESH_TOKEN
-    })
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString()
   });
 
+  const text = await response.text();
   if (!response.ok) {
-    throw new Error('Falha ao renovar token: ' + response.status);
+    console.error('❌ Podio token refresh error body:', text);
+    throw new Error('Falha ao renovar token: ' + response.status + ' — ' + text);
   }
 
-  const data = await response.json();
+  const data = JSON.parse(text);
   podioAccessToken = data.access_token;
+  console.log('🔄 Token renovado com sucesso.');
   return podioAccessToken;
 }
 
@@ -50,7 +57,8 @@ async function podioGet(endpoint) {
   }
 
   if (!res.ok) {
-    throw new Error('Podio GET falhou: ' + res.status);
+    const errText = await res.text();
+    throw new Error('Podio GET falhou: ' + res.status + ' — ' + errText);
   }
 
   return res.json();
@@ -79,7 +87,8 @@ async function podioPost(endpoint, body) {
   }
 
   if (!res.ok) {
-    throw new Error('Podio POST falhou: ' + res.status);
+    const errText = await res.text();
+    throw new Error('Podio POST falhou: ' + res.status + ' — ' + errText);
   }
 
   return res.json();
