@@ -102,6 +102,9 @@ app.post('/revisar', async (req, res) => {
 
   try {
     const item = await podioGet(`item/${item_id}`);
+    // Instrumentação para inspeção do mapeamento de campos
+    console.log('🔍 FIELDS RECEBIDAS:', JSON.stringify(item.fields, null, 2));
+
     const statusField = item.fields.find(f => f.external_id === 'status');
     const status = statusField?.values?.[0]?.text;
 
