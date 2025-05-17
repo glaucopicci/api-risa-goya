@@ -98,7 +98,7 @@ async function getGoogleDocContent(docUrl) {
   const cleanUrl = docUrl.split('?')[0];
   const match = cleanUrl.match(/\/document\/d\/([a-zA-Z0-9-_]+)/);
   if (!match) return '';
-  const docId = match[1];
+  const docId = match[1]; // Agora está no lugar certo ✅
 
   const rawCredentials = JSON.parse(GOOGLE_CREDENTIALS_JSON);
   const credentials = {
