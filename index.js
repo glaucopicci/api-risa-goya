@@ -95,7 +95,8 @@ async function podioPost(endpoint, body) {
 }
 
 async function getGoogleDocContent(docUrl) {
-  const match = docUrl.match(/\/document\/d\/([a-zA-Z0-9-_]+)/);
+  const cleanUrl = docUrl.split('?')[0];
+  const match = cleanUrl.match(/\/document\/d\/([a-zA-Z0-9-_]+)/);
   if (!match) return '';
   const docId = match[1];
 
@@ -132,20 +133,28 @@ app.post('/revisar', async (req, res) => {
       return res.status(204).send();
     }
 
-    const title = item.fields.find(f => f.external_id === 'titulo-2')?.values?.[0]?.value || '';
-    const cliente = item.fields.find(f => f.external_id === 'cliente')?.values?.[0]?.value?.title || '';
-    const briefing = item.fields.find(f => f.external_id === 'observacoes-e-links')?.values?.[0]?.value || '';
-    const docUrl = item.fields.find(f => f.external_id === 'link-do-texto')?.values?.[0]?.embed?.url || '';
+    const getField = (id) => item.fields.find(f => f.external_id === id);
+
+    const title = getField('titulo-2')?.values?.[0]?.value || '';
+    const cliente = getField('cliente')?.values?.[0]?.value?.title || '';
+    const briefing = getField('observacoes-e-links')?.values?.[0]?.value || '';
+    const tipoJob = getField('tipo-do-job')?.values?.[0]?.value?.text || '';
+    const redator = getField('time-envolvido')?.values?.[0]?.value?.name || '';
+
+    const docField = getField('link-do-texto');
+    const docUrl = docField?.values?.[0]?.embed?.url || docField?.values?.[0]?.value || '';
     const texto = docUrl ? await getGoogleDocContent(docUrl) : '';
 
     const model = OPENAI_MODEL || 'gpt-4o';
     console.log(`🤖 Chamando OpenAI com modelo: ${model}`);
 
+    const prompt = `Título: ${title}\nCliente: ${cliente}\nTipo de Job: ${tipoJob}\nBriefing: ${briefing}\nRedator: ${redator}\n\nTexto:\n${texto}\n\nRevise o conteúdo acima conforme as diretrizes editoriais da Goya Conteúdo.`;
+
     const completion = await openai.chat.completions.create({
       model,
       messages: [
         { role: 'system', content: 'Você é a Risa, assistente de revisão da Goya Conteúdo.' },
-        { role: 'user', content: `Título: ${title}\nCliente: ${cliente}\nBriefing: ${briefing}\n\nTexto:\n${texto}\n\nRevise o conteúdo acima conforme as diretrizes editoriais.` }
+        { role: 'user', content: prompt }
       ]
     });
 
