@@ -112,7 +112,7 @@ app.post('/revisar', async (req, res) => {
     const cliente = item.fields.find(f => f.external_id === 'cliente')?.values?.[0]?.value?.title || '';
     const briefing = item.fields.find(f => f.external_id === 'observacoes-e-links')?.values?.[0]?.value || '';
 
-    const model = OPENAI_MODEL || 'g-67ddadfd22d881919a658cea6d5dc29f-risa';
+    const model = OPENAI_MODEL || 'gpt-4o';
     console.log(`🤖 Chamando OpenAI com modelo: ${model}`);
 
     const completion = await openai.chat.completions.create({
