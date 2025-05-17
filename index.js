@@ -95,16 +95,17 @@ async function podioPost(endpoint, body) {
 }
 
 async function getGoogleDocContent(docUrl) {
-  const cleanUrl = docUrl.split('?')[0];
-  const match = cleanUrl.match(/\/document\/d\/([a-zA-Z0-9-_]+)/);
-  if (!match) return '';
-  const docId = match[1];
+  const rawCredentials = JSON.parse(GOOGLE_CREDENTIALS_JSON);
+  const credentials = {
+    ...rawCredentials,
+    private_key: rawCredentials.private_key.replace(/\\n/g, '\n')
+  };
 
-  const credentials = JSON.parse(GOOGLE_CREDENTIALS_JSON);
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/documents.readonly']
   });
+
   const client = await auth.getClient();
   const docs = google.docs({ version: 'v1', auth: client });
   const doc = await docs.documents.get({ documentId: docId });
@@ -173,4 +174,3 @@ app.post('/revisar', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Render escutando na porta ${PORT}`));
-
