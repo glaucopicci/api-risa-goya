@@ -1,6 +1,8 @@
+// index.js
 import express from 'express';
 import fetch from 'node-fetch';
 import OpenAI from 'openai';
+import { google } from 'googleapis';
 
 const app = express();
 app.use(express.json());
@@ -11,7 +13,8 @@ const {
   PODIO_REFRESH_TOKEN,
   PODIO_ACCESS_TOKEN: initialAccessToken,
   OPENAI_API_KEY,
-  OPENAI_MODEL
+  OPENAI_MODEL,
+  GOOGLE_CREDENTIALS_JSON
 } = process.env;
 
 let podioAccessToken = initialAccessToken;
@@ -91,6 +94,28 @@ async function podioPost(endpoint, body) {
   return res.json();
 }
 
+async function getGoogleDocContent(docUrl) {
+  const match = docUrl.match(/\/document\/d\/([a-zA-Z0-9-_]+)/);
+  if (!match) return '';
+  const docId = match[1];
+
+  const credentials = JSON.parse(GOOGLE_CREDENTIALS_JSON);
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/documents.readonly']
+  });
+  const client = await auth.getClient();
+  const docs = google.docs({ version: 'v1', auth: client });
+  const doc = await docs.documents.get({ documentId: docId });
+
+  const content = doc.data.body.content || [];
+  const paragraphs = content.flatMap(el =>
+    el.paragraph?.elements?.map(e => e.textRun?.content.trim()) || []
+  );
+
+  return paragraphs.filter(Boolean).join('\n');
+}
+
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 app.post('/revisar', async (req, res) => {
@@ -102,7 +127,6 @@ app.post('/revisar', async (req, res) => {
 
     const statusField = item.fields.find(f => f.external_id === 'status');
     const optionId = statusField?.values?.[0]?.value?.id;
-
     if (optionId !== 4) {
       console.log(`⏭️ Ignorado — option_id é ${optionId}`);
       return res.status(204).send();
@@ -111,6 +135,8 @@ app.post('/revisar', async (req, res) => {
     const title = item.fields.find(f => f.external_id === 'titulo-2')?.values?.[0]?.value || '';
     const cliente = item.fields.find(f => f.external_id === 'cliente')?.values?.[0]?.value?.title || '';
     const briefing = item.fields.find(f => f.external_id === 'observacoes-e-links')?.values?.[0]?.value || '';
+    const docUrl = item.fields.find(f => f.external_id === 'link-do-texto')?.values?.[0]?.embed?.url || '';
+    const texto = docUrl ? await getGoogleDocContent(docUrl) : '';
 
     const model = OPENAI_MODEL || 'gpt-4o';
     console.log(`🤖 Chamando OpenAI com modelo: ${model}`);
@@ -119,7 +145,7 @@ app.post('/revisar', async (req, res) => {
       model,
       messages: [
         { role: 'system', content: 'Você é a Risa, assistente de revisão da Goya Conteúdo.' },
-        { role: 'user', content: `Título: ${title}\nCliente: ${cliente}\nBriefing: ${briefing}\n\nRevise o conteúdo.` }
+        { role: 'user', content: `Título: ${title}\nCliente: ${cliente}\nBriefing: ${briefing}\n\nTexto:\n${texto}\n\nRevise o conteúdo acima conforme as diretrizes editoriais.` }
       ]
     });
 
