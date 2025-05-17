@@ -95,6 +95,11 @@ async function podioPost(endpoint, body) {
 }
 
 async function getGoogleDocContent(docUrl) {
+  const cleanUrl = docUrl.split('?')[0];
+  const match = cleanUrl.match(/\/document\/d\/([a-zA-Z0-9-_]+)/);
+  if (!match) return '';
+  const docId = match[1];
+
   const rawCredentials = JSON.parse(GOOGLE_CREDENTIALS_JSON);
   const credentials = {
     ...rawCredentials,
