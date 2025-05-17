@@ -15,9 +15,9 @@
     "openai": "^4.98.0",
     "podio-js": "^1.6.1",
     "googleapis": "^118.0.0"
+  },
+  "engines": {
+    "node": "16.x"
   }
-}
-"engines": {
-  "node": "16.x"
 }
 
