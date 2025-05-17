@@ -16,9 +16,6 @@ const {
 
 let podioAccessToken = initialAccessToken;
 
-/**
- * Renova o token OAuth do Podio usando form-encoded.
- */
 async function refreshAccessToken() {
   const params = new URLSearchParams();
   params.append('grant_type', 'refresh_token');
@@ -34,13 +31,13 @@ async function refreshAccessToken() {
 
   const text = await response.text();
   if (!response.ok) {
-    console.error('❌ Podio token refresh error body:', text);
-    throw new Error('Falha ao renovar token: ' + response.status + ' — ' + text);
+    console.error('❌ Erro ao renovar token:', text);
+    throw new Error('Erro ao renovar token: ' + response.status);
   }
 
   const data = JSON.parse(text);
   podioAccessToken = data.access_token;
-  console.log('🔄 Token renovado com sucesso.');
+  console.log('🔄 Token OAuth2 renovado');
   return podioAccessToken;
 }
 
@@ -98,48 +95,47 @@ const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 app.post('/revisar', async (req, res) => {
   const { item_id, revision_id } = req.body;
-  console.log(`📥 Recebido do proxy: item_id=${item_id}, revision_id=${revision_id}`);
+  console.log(`📩 Recebido do PHP: item_id=${item_id}, revision_id=${revision_id}`);
 
   try {
     const item = await podioGet(`item/${item_id}`);
-    // Instrumentação para inspeção do mapeamento de campos
-    console.log('🔍 FIELDS RECEBIDAS:', JSON.stringify(item.fields, null, 2));
 
     const statusField = item.fields.find(f => f.external_id === 'status');
-    const status = statusField?.values?.[0]?.text;
+    const optionId = statusField?.values?.[0]?.value?.id;
 
-    if (status !== 'Revisar') {
-      console.log('⏭️ Status diferente de “Revisar” — ignorando.');
+    if (optionId !== 4) {
+      console.log(`⏭️ Ignorado — option_id é ${optionId}`);
       return res.status(204).send();
     }
 
-    const title = item.fields.find(f => f.external_id === 'title')?.values?.[0]?.text || '';
-    const cliente = item.fields.find(f => f.external_id === 'cliente')?.values?.[0]?.text || '';
-    const briefing = item.fields.find(f => f.external_id === 'briefing')?.values?.[0]?.text || '';
+    const title = item.fields.find(f => f.external_id === 'titulo-2')?.values?.[0]?.value || '';
+    const cliente = item.fields.find(f => f.external_id === 'cliente')?.values?.[0]?.value?.title || '';
+    const briefing = item.fields.find(f => f.external_id === 'observacoes-e-links')?.values?.[0]?.value || '';
 
     const model = OPENAI_MODEL || 'g-67ddadfd22d881919a658cea6d5dc29f-risa';
-    console.log(`🤖 Usando modelo: ${model}`);
+    console.log(`🤖 Chamando OpenAI com modelo: ${model}`);
 
     const completion = await openai.chat.completions.create({
       model,
       messages: [
         { role: 'system', content: 'Você é a Risa, assistente de revisão da Goya Conteúdo.' },
-        { role: 'user', content: `Título: ${title}\nCliente: ${cliente}\nBriefing: ${briefing}\n\nPor favor, revise o texto acima conforme as guidelines.` }
+        { role: 'user', content: `Título: ${title}\nCliente: ${cliente}\nBriefing: ${briefing}\n\nRevise o conteúdo.` }
       ]
     });
 
     const revisado = completion.choices[0].message.content;
-    await podioPost(`item/${item_id}/comment`, { value: revisado });
-    console.log('✅ Comentário publicado no Podio');
+    console.log('📝 Texto revisado:', revisado);
+
+    const result = await podioPost(`item/${item_id}/comment`, { value: revisado });
+    console.log('✅ Comentário postado no Podio:', result);
 
     res.status(200).send({ revisado });
   } catch (err) {
-    console.error('❌ Erro interno:', err);
+    console.error('❌ Erro:', err);
     res.status(500).send({ error: err.toString() });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
-
+app.listen(PORT, () => console.log(`🚀 Render escutando na porta ${PORT}`));
 
