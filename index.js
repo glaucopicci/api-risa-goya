@@ -126,7 +126,7 @@ app.post('/revisar', async (req, res) => {
     const revisado = completion.choices[0].message.content;
     console.log('📝 Texto revisado:', revisado);
 
-    const result = await podioPost(`item/${item_id}/comment`, { value: revisado });
+    const result = await podioPost(`comment/item/${item_id}`, { value: revisado });
     console.log('✅ Comentário postado no Podio:', result);
 
     res.status(200).send({ revisado });
