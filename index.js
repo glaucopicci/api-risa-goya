@@ -1,4 +1,4 @@
-// index.js otimizado
+k// index.js otimizado
 import express from 'express';
 import fetch from 'node-fetch';
 import OpenAI from 'openai';
@@ -123,6 +123,68 @@ async function getGoogleDocContent(docUrl) {
 
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
+//iniciaram as mudanças do arquivo funcional para a rota guideline no drive
+
+import path from 'path';
+
+function slugify(str) {
+  return str
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .replace(/[^\w\s-]/g, "") // remove pontuação
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+async function getInstrucoes(clienteNome) {
+  const credentials = JSON.parse(GOOGLE_CREDENTIALS_JSON);
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      ...credentials,
+      private_key: credentials.private_key.replace(/\\n/g, '\n')
+    },
+    scopes: ['https://www.googleapis.com/auth/drive.readonly']
+  });
+
+  const client = await auth.getClient();
+  const drive = google.drive({ version: 'v3', auth: client });
+
+  const slug = slugify(clienteNome);
+
+  // 📄 Lê o guideline geral (guideline-geral.txt)
+  const guidelineRes = await drive.files.list({
+    q: "name='guideline-geral.txt'",
+    fields: 'files(id)',
+    pageSize: 1
+  });
+
+  const guidelineId = guidelineRes.data.files?.[0]?.id;
+  let guideline = '';
+  if (guidelineId) {
+    const texto = await drive.files.get({ fileId: guidelineId, alt: 'media' }, { responseType: 'text' });
+    guideline = texto.data;
+  }
+
+  // 📚 Lê o PDF do cliente (brandbooks/slug.pdf)
+  const pdfName = `${slug}.pdf`;
+  const pdfList = await drive.files.list({
+    q: `name='${pdfName}' and trashed = false`,
+    fields: 'files(id, name)',
+    pageSize: 1
+  });
+
+  let brandbookText = '';
+  const pdfFile = pdfList.data.files?.[0];
+  if (pdfFile) {
+    const pdfLink = `https://drive.google.com/file/d/${pdfFile.id}/view`;
+    brandbookText = `📘 Brandbook detectado para ${clienteNome}:\nLink: ${pdfLink}\n\nUse as orientações desse documento ao revisar o texto.`;
+  }
+
+  return `${guideline}\n\n${brandbookText}`;
+}
+
+//terminaram as mudanças do arquivo funcional para a rota guideline no drive
+
 // ======= ROTA /revisar =======
 app.post('/revisar', async (req, res) => {
   const { item_id } = req.body;
@@ -147,7 +209,25 @@ app.post('/revisar', async (req, res) => {
     console.log(`[${title}] Enviando para revisão...`);
 
     const model = OPENAI_MODEL || 'gpt-4o';
-    const prompt = `Título: ${title}\nCliente: ${cliente}\nTipo de Job: ${tipoJob}\nBriefing: ${briefing}\nRedator: ${redator}\n\nTexto:\n${texto}\n\nRevise o conteúdo acima conforme as diretrizes editoriais da Goya Conteúdo.`;
+
+//iniciaram as mudanças do arquivo funcional para a rota guideline no drive
+
+    const instrucoes = await getInstrucoes(cliente);
+
+    const prompt = `${instrucoes}
+
+        Título: ${title}
+        Cliente: ${cliente}
+        Tipo de Job: ${tipoJob}
+        Briefing: ${briefing}
+        Redator: ${redator}
+
+        Texto:
+        ${texto}
+
+        Revise o conteúdo acima conforme as diretrizes da Goya Conteúdo e as instruções do cliente.`;
+
+//terminaram as mudanças do arquivo funcional para a rota guideline no drive
 
     const completion = await openai.chat.completions.create({
       model,
@@ -170,4 +250,5 @@ app.post('/revisar', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Risa rodando na porta ${PORT}`));
+
 
