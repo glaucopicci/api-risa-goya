@@ -151,9 +151,9 @@ async function getInstrucoes(clienteNome) {
 
   const slug = slugify(clienteNome);
 
-  // 📄 Lê o guideline geral (guideline-geral.txt)
+  // 📄 Lê o guideline geral (guidelines.txt)
   const guidelineRes = await drive.files.list({
-    q: "name='guideline-geral.txt'",
+    q: "name='guidelines.txt'",
     fields: 'files(id)',
     pageSize: 1
   });
