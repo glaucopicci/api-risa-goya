@@ -151,9 +151,9 @@ async function getInstrucoes(clienteNome) {
 
   const slug = slugify(clienteNome);
 
-  // 📄 Lê o guideline geral (guidelines.txt)
+  // 📄 Lê o guideline geral (guideline-geral.txt)
   const guidelineRes = await drive.files.list({
-    q: "name='guidelines.txt'",
+    q: "name='guideline-geral.txt'",
     fields: 'files(id)',
     pageSize: 1
   });
@@ -227,7 +227,7 @@ app.post('/revisar', async (req, res) => {
 
         Revise o conteúdo acima conforme as diretrizes da Goya Conteúdo e as instruções do cliente.`;
 
-//terminaram as mudanças do arquivo funcional para a rota guideline no drive
+//terminou as mudanças do arquivo funcional para a rota guideline no drive
 
     const completion = await openai.chat.completions.create({
       model,
