@@ -1,254 +1,110 @@
-// index.js otimizado
-import express from 'express';
-import fetch from 'node-fetch';
-import OpenAI from 'openai';
-import { google } from 'googleapis';
+<?php
+/*
+Plugin Name: Podio Webhook Filter
+Description: Proxy Podio→Render: valida webhook via App-Auth e só repassa item.update com status “Revisar”.
+Version: 2.7
+Author: Goya Conteúdo
+*/
 
-const app = express();
-app.use(express.json());
+if ( ! defined( 'ABSPATH' ) ) exit;
 
-const {
-  PODIO_CLIENT_ID,
-  PODIO_CLIENT_SECRET,
-  PODIO_REFRESH_TOKEN,
-  PODIO_ACCESS_TOKEN: initialAccessToken,
-  OPENAI_API_KEY,
-  OPENAI_MODEL,
-  GOOGLE_CREDENTIALS_JSON
-} = process.env;
+// CONFIGURAÇÃO
+define( 'PODIO_APP_ID',              '25797246' );
+define( 'PODIO_APP_TOKEN',           'd72b05c0f30432e975dba1de0ef2d28c' );
+define( 'PODIO_CLIENT_ID',           'goya-risa' );
+define( 'PODIO_CLIENT_SECRET',       'dTldSyr5APBGs7uLB84JduAHjgJ0Q7K73QlVPPgwGUV4Rvosj1zScmXf6brVCqh5' );
+define( 'PODIO_WEBHOOK_ID',          '23925520' );
+define( 'PODIO_STATUS_FIELD_ID',     '220199999' );
+define( 'PODIO_STATUS_REVISAR_OPTION_ID', '4' );
+define( 'WEBHOOK_URL',               'https://risa-webhook-novo.onrender.com/webhook' );
 
-let podioAccessToken = initialAccessToken;
+// flush rules
+register_activation_hook(__FILE__,'pwf_flush'); register_deactivation_hook(__FILE__,'pwf_flush');
+function pwf_flush(){ flush_rewrite_rules(); }
 
-// ======= Podio OAuth =======
-async function refreshAccessToken() {
-  const params = new URLSearchParams();
-  params.append('grant_type', 'refresh_token');
-  params.append('client_id', PODIO_CLIENT_ID);
-  params.append('client_secret', PODIO_CLIENT_SECRET);
-  params.append('refresh_token', PODIO_REFRESH_TOKEN);
-
-  const response = await fetch('https://podio.com/oauth/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString()
-  });
-
-  const text = await response.text();
-  if (!response.ok) throw new Error('Erro ao renovar token: ' + text);
-
-  const data = JSON.parse(text);
-  podioAccessToken = data.access_token;
-  return podioAccessToken;
-}
-
-async function podioGet(endpoint) {
-  let res = await fetch(`https://api.podio.com/${endpoint}`, {
-    headers: { Authorization: `OAuth2 ${podioAccessToken}` }
-  });
-
-  if (res.status === 401) {
-    await refreshAccessToken();
-    res = await fetch(`https://api.podio.com/${endpoint}`, {
-      headers: { Authorization: `OAuth2 ${podioAccessToken}` }
-    });
-  }
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error('Podio GET falhou: ' + res.status + ' — ' + errText);
-  }
-
-  return res.json();
-}
-
-async function podioPost(endpoint, body) {
-  let res = await fetch(`https://api.podio.com/${endpoint}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `OAuth2 ${podioAccessToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
-  });
-
-  if (res.status === 401) {
-    await refreshAccessToken();
-    res = await fetch(`https://api.podio.com/${endpoint}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `OAuth2 ${podioAccessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
-  }
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error('Podio POST falhou: ' + res.status + ' — ' + errText);
-  }
-
-  return res.json();
-}
-
-// ======= Google Docs =======
-async function getGoogleDocContent(docUrl) {
-  const cleanUrl = docUrl.split('?')[0];
-  const match = cleanUrl.match(/\/document\/d\/([a-zA-Z0-9-_]+)/);
-  if (!match) return '';
-  const docId = match[1];
-
-  const rawCredentials = JSON.parse(GOOGLE_CREDENTIALS_JSON);
-  const credentials = {
-    ...rawCredentials,
-    private_key: rawCredentials.private_key.replace(/\\n/g, '\n')
-  };
-
-  const auth = new google.auth.GoogleAuth({
-    credentials,
-    scopes: ['https://www.googleapis.com/auth/documents.readonly']
-  });
-
-  const client = await auth.getClient();
-  const docs = google.docs({ version: 'v1', auth: client });
-  const doc = await docs.documents.get({ documentId: docId });
-
-  const content = doc.data.body.content || [];
-  const paragraphs = content.flatMap(el =>
-    el.paragraph?.elements?.map(e => e.textRun?.content.trim()) || []
-  );
-
-  return paragraphs.filter(Boolean).join('\n');
-}
-
-const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-
-//iniciaram as mudanças do arquivo funcional para a rota guideline no drive
-
-import path from 'path';
-
-function slugify(str) {
-  return str
-    .toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove acentos
-    .replace(/[^\w\s-]/g, "") // remove pontuação
-    .trim()
-    .replace(/\s+/g, "-");
-}
-
-async function getInstrucoes(clienteNome) {
-  const credentials = JSON.parse(GOOGLE_CREDENTIALS_JSON);
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      ...credentials,
-      private_key: credentials.private_key.replace(/\\n/g, '\n')
-    },
-    scopes: ['https://www.googleapis.com/auth/drive.readonly']
-  });
-
-  const client = await auth.getClient();
-  const drive = google.drive({ version: 'v3', auth: client });
-
-  const slug = slugify(clienteNome);
-
-  // 📄 Lê o guideline geral (guideline-geral.txt)
-  const guidelineRes = await drive.files.list({
-    q: "name='guideline-geral.txt'",
-    fields: 'files(id)',
-    pageSize: 1
-  });
-
-  const guidelineId = guidelineRes.data.files?.[0]?.id;
-  let guideline = '';
-  if (guidelineId) {
-    const texto = await drive.files.get({ fileId: guidelineId, alt: 'media' }, { responseType: 'text' });
-    guideline = texto.data;
-  }
-
-  // 📚 Lê o PDF do cliente (brandbooks/slug.pdf)
-  const pdfName = `${slug}.pdf`;
-  const pdfList = await drive.files.list({
-    q: `name='${pdfName}' and trashed = false`,
-    fields: 'files(id, name)',
-    pageSize: 1
-  });
-
-  let brandbookText = '';
-  const pdfFile = pdfList.data.files?.[0];
-  if (pdfFile) {
-    const pdfLink = `https://drive.google.com/file/d/${pdfFile.id}/view`;
-    brandbookText = `📘 Brandbook detectado para ${clienteNome}:\nLink: ${pdfLink}\n\nUse as orientações desse documento ao revisar o texto.`;
-  }
-
-  return `${guideline}\n\n${brandbookText}`;
-}
-
-//terminaram as mudanças do arquivo funcional para a rota guideline no drive
-
-// ======= ROTA /revisar =======
-app.post('/revisar', async (req, res) => {
-  const { item_id } = req.body;
-
-  try {
-    const item = await podioGet(`item/${item_id}`);
-    const getField = (id) => item.fields.find(f => f.external_id === id);
-
-    const statusField = getField('status');
-    const optionId = statusField?.values?.[0]?.value?.id;
-    if (optionId !== 4) return res.status(204).send(); // não é "Revisar"
-
-    const title = getField('titulo-2')?.values?.[0]?.value || '';
-    const cliente = getField('cliente')?.values?.[0]?.value?.title || '';
-    const tipoJob = getField('tipo-do-job')?.values?.[0]?.value?.text || '';
-    const briefing = getField('observacoes-e-links')?.values?.[0]?.value || '';
-    const redator = getField('time-envolvido')?.values?.[0]?.value?.name || '';
-    const docField = getField('link-do-texto');
-    const docUrl = docField?.values?.[0]?.embed?.url || docField?.values?.[0]?.value || '';
-    const texto = docUrl ? await getGoogleDocContent(docUrl) : '';
-
-    console.log(`[${title}] Enviando para revisão...`);
-
-    const model = OPENAI_MODEL || 'gpt-4o';
-
-//iniciaram as mudanças do arquivo funcional para a rota guideline no drive
-
-    const instrucoes = await getInstrucoes(cliente);
-
-    const prompt = `${instrucoes}
-
-        Título: ${title}
-        Cliente: ${cliente}
-        Tipo de Job: ${tipoJob}
-        Briefing: ${briefing}
-        Redator: ${redator}
-
-        Texto:
-        ${texto}
-
-        Revise o conteúdo acima conforme as diretrizes da Goya Conteúdo e as instruções do cliente.`;
-
-//terminou as mudanças do arquivo funcional para a rota guideline no drive
-
-    const completion = await openai.chat.completions.create({
-      model,
-      messages: [
-        { role: 'system', content: 'Você é a Risa, assistente de revisão da Goya Conteúdo.' },
-        { role: 'user', content: prompt }
-      ]
-    });
-
-    const revisado = completion.choices[0].message.content;
-    await podioPost(`comment/item/${item_id}`, { value: revisado });
-
-    console.log(`[${title}] ✅ Comentário postado`);
-    res.status(200).send({ revisado });
-  } catch (err) {
-    console.error('❌ Erro geral:', err.toString());
-    res.status(500).send({ error: err.toString() });
-  }
+// registra rota
+add_action('rest_api_init', function(){
+  register_rest_route('podio/v1','/hook',[
+    'methods'=>WP_REST_Server::CREATABLE,
+    'callback'=>'pwf_handle',
+    'permission_callback'=>'__return_true',
+  ]);
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Risa rodando na porta ${PORT}`));
+function pwf_handle(WP_REST_Request $req){
+  error_log('[Podio v2.7] BODY_RAW: '.$req->get_body());
 
+  parse_str($req->get_body(), $body);
+  $type    = $body['type']    ?? '';
+  $hook_id = (string)($body['hook_id'] ?? '');
+  $code    = $body['code']    ?? '';
 
+  // 1) handshake real
+  if($type==='hook.verify' && $hook_id===PODIO_WEBHOOK_ID && $code){
+    // App-Auth form-urlencoded
+    $oauth = wp_remote_post('https://podio.com/oauth/token',[
+      'body'=>[
+        'grant_type'=>'app',
+        'app_id'=>PODIO_APP_ID,
+        'app_token'=>PODIO_APP_TOKEN,
+        'client_id'=>PODIO_CLIENT_ID,
+        'client_secret'=>PODIO_CLIENT_SECRET,
+      ],
+      'timeout'=>10,
+    ]);
+    if(is_wp_error($oauth)){
+      error_log('[Podio v2.7] OAuth Error: '.$oauth->get_error_message());
+      return new WP_Error('podio_oauth_error','Erro ao autenticar',['status'=>500]);
+    }
+    $data = json_decode(wp_remote_retrieve_body($oauth), true);
+    if(empty($data['access_token'])){
+      error_log('[Podio v2.7] Sem access_token: '.print_r($data,true));
+      return new WP_Error('podio_oauth_no_token','Token não retornado',['status'=>500]);
+    }
+    // valida no Podio
+    $val = wp_remote_post(
+      sprintf('https://api.podio.com/hook/%s/verify/validate',$hook_id),
+      [
+        'headers'=>[
+          'Authorization'=>'Bearer '.$data['access_token'],
+          'Content-Type'=>'application/json',
+        ],
+        'body'=>wp_json_encode(['code'=>$code]),
+        'timeout'=>10,
+      ]
+    );
+    $status = wp_remote_retrieve_response_code($val);
+    error_log("[Podio v2.7] verify/validate status: {$status}");
+    if($status>=200 && $status<300){
+      // retorna 204 No Content para o Podio completar o webhook
+      return rest_ensure_response(null, 204);
+    }
+    return new WP_Error('podio_verify_failed',"Falha na validação (HTTP {$status})",['status'=>$status]);
+  }
+
+  // 2) ignora outros hooks
+  if($hook_id!==PODIO_WEBHOOK_ID){
+    return rest_ensure_response('Ignored');
+  }
+
+  // 3) filtra item.update → Revisar
+  if($type==='item.update'){
+    $payload = json_decode($req->get_body(), true);
+    $diffs   = $payload['data']['revision']['diffs'] ?? [];
+    foreach($diffs as $d){
+      if((string)$d['field_id']===PODIO_STATUS_FIELD_ID
+        && (string)$d['new_value']===PODIO_STATUS_REVISAR_OPTION_ID
+        && (string)$d['original_value']!==PODIO_STATUS_REVISAR_OPTION_ID
+      ){
+        wp_remote_post(WEBHOOK_URL,[
+          'headers'=>['Content-Type'=>'application/json'],
+          'body'=>wp_json_encode($payload),
+          'timeout'=>5,
+        ]);
+        break;
+      }
+    }
+  }
+
+  return rest_ensure_response('OK');
+}
