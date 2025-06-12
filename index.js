@@ -209,7 +209,6 @@ app.post('/revisar', async (req, res) => {
     console.log(`[${title}] Enviando para revisão...`);
 
     const model = OPENAI_MODEL || 'gpt-4o';
-    console.log(`[RISA] Modelo utilizado: ${model}`);
 
 
 //iniciaram as mudanças do arquivo funcional para a rota guideline no drive
