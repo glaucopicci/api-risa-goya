@@ -249,5 +249,20 @@ app.post('/revisar', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// ======= ROTA /handshake =======
+app.post('/handshake', async (req, res) => {
+  const { hook_id, code } = req.body;
+
+  try {
+    const result = await podioPost(`hook/${hook_id}/verify/validate`, { code });
+    console.log(`🔁 Webhook ${hook_id} revalidado com sucesso.`);
+    res.status(200).send({ ok: true, result });
+  } catch (err) {
+    console.error('❌ Erro ao validar webhook:', err.toString());
+    res.status(500).send({ error: err.toString() });
+  }
+});
+
 app.listen(PORT, () => console.log(`🚀 Risa rodando na porta ${PORT}`));
 
